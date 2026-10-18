@@ -77,7 +77,6 @@ import subprocess
 
 from .config import compute_score, ADVISOR_TEMPLATE
 from .remote_agent_client import RemoteAgentClient
-from utils.vllm import start_vllm_server
 from utils.eval_utils import compute_multi_run_statistics, format_ci_string
 
 litellm.drop_params = True
@@ -257,6 +256,10 @@ class AdvisorDebugger:
             )
             self.temp_model_dir = temp_dir
 
+            # utils.vllm is not in the repo; import only on the --is_local path
+            # so the hosted_vllm and student-only paths load without it.
+            from utils.vllm import start_vllm_server
+
             # Start vLLM server
             print(f"\nStarting vLLM server for model: {model_path_to_serve}")
             served_model_name = "local-advisor-model"
@@ -411,6 +414,11 @@ class AdvisorDebugger:
                     advisor_feedback,
                     max_steps=self.max_steps_per_advisor_call,
                 )
+
+                # A failed session (dead key, empty balance, rate limit) is an
+                # error, not an unresolved attempt; same as eval_swe_smith.
+                if result.get("error"):
+                    raise RuntimeError(f"Agent session failed: {result['error']}")
 
                 # Parse result (matching env.py step)
                 if result.get("terminated"):
@@ -757,7 +765,10 @@ class AdvisorDebugger:
 
 
 def save_session_mapping(results: List[AdvisorEvalResult], output_file: str):
-    """Save session ID to success/failure mapping.
+    """Save per-instance results, keyed by instance_id.
+
+    Every instance gets a row, including errored ones with no session_id,
+    so a failed session is visible to later analysis instead of missing.
 
     Args:
         results: List of evaluation results
@@ -765,24 +776,27 @@ def save_session_mapping(results: List[AdvisorEvalResult], output_file: str):
     """
     mapping = {}
     for r in results:
-        if r.session_id:
-            mapping[r.session_id] = {
-                "instance_id": r.instance_id,
-                "eval_id": r.eval_id,
-                "diff": r.generated_patch,
-                "resolved": r.resolved,
-                "status": r.status,
-                "total_steps": r.total_steps,
-                "advisor_calls": r.advisor_calls,
-                "advisor_guidance_history": r.advisor_guidance_history,
-                "error": r.error,
-            }
+        mapping[r.instance_id] = {
+            "instance_id": r.instance_id,
+            "session_id": r.session_id,
+            "eval_id": r.eval_id,
+            "diff": r.generated_patch,
+            "resolved": r.resolved,
+            "status": r.status,
+            "total_steps": r.total_steps,
+            "agent_cost": r.agent_cost,
+            "advisor_cost": r.advisor_cost,
+            "advisor_calls": r.advisor_calls,
+            "advisor_guidance_history": r.advisor_guidance_history,
+            "error": r.error,
+        }
 
     with open(output_file, "w") as f:
         json.dump(mapping, f, indent=2)
 
+    errors = sum(1 for row in mapping.values() if row["error"])
     print(f"\nSession mapping saved to: {output_file}")
-    print(f"Total sessions tracked: {len(mapping)}")
+    print(f"Total instances tracked: {len(mapping)} ({errors} errored)")
 
 
 def print_summary(

@@ -307,7 +307,10 @@ class SWESmithEvaluator:
 
 
 def save_session_mapping(results: List[EvalResult], output_file: str):
-    """Save session ID to success/failure mapping.
+    """Save per-instance results, keyed by instance_id.
+
+    Every instance gets a row, including errored ones with no session_id,
+    so a failed session is visible to later analysis instead of missing.
 
     Args:
         results: List of evaluation results
@@ -315,22 +318,24 @@ def save_session_mapping(results: List[EvalResult], output_file: str):
     """
     mapping = {}
     for r in results:
-        if r.session_id:
-            mapping[r.session_id] = {
-                "instance_id": r.instance_id,
-                "eval_id": r.eval_id,
-                "diff": r.diff,
-                "resolved": r.resolved,
-                "status": r.status,
-                "total_steps": r.total_steps,
-                "error": r.error,
-            }
+        mapping[r.instance_id] = {
+            "instance_id": r.instance_id,
+            "session_id": r.session_id,
+            "eval_id": r.eval_id,
+            "diff": r.diff,
+            "resolved": r.resolved,
+            "status": r.status,
+            "total_steps": r.total_steps,
+            "agent_cost": r.agent_cost,
+            "error": r.error,
+        }
 
     with open(output_file, "w") as f:
         json.dump(mapping, f, indent=2)
 
+    errors = sum(1 for row in mapping.values() if row["error"])
     print(f"\nSession mapping saved to: {output_file}")
-    print(f"Total sessions tracked: {len(mapping)}")
+    print(f"Total instances tracked: {len(mapping)} ({errors} errored)")
 
 
 def print_summary(results: List[EvalResult], aggregate_stats: Dict[str, Any] = None):
