@@ -19,7 +19,7 @@ import argparse
 import logging
 from flask import Flask, request, jsonify
 
-from .config import compute_score as _compute_score_local
+from .config import compute_score_local as _compute_score_local
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

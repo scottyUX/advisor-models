@@ -111,6 +111,9 @@ class SWESmithEvaluator:
                 max_steps=40,
             )
 
+            if result.get("error"):
+                raise RuntimeError(f"Agent session failed: {result['error']}")
+
             total_steps = result.get("total_steps", 0)
             cost = result.get("cost", 0.0)
             terminated = result.get("terminated", False)
@@ -182,6 +185,10 @@ class SWESmithEvaluator:
             print(f"Generated patch length: {len(generated_patch)} chars")
             print(f"Agent info: {agent_info}")
             sys.stdout.flush()
+
+            # Don't score a failed session as an unresolved attempt.
+            if agent_info.get("status") == "error":
+                raise RuntimeError(agent_info.get("message", "agent error"))
 
             # Evaluate using SWE-Smith harness
             reward, run_id, info = compute_score(generated_patch, instance)

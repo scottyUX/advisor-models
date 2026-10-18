@@ -216,7 +216,15 @@ def compute_score(patch: str, instance: dict) -> Tuple[float, str, str]:
         except Exception as e:
             return 0.0, "ERROR", f"Remote evaluation failed: {str(e)}"
 
-    # Use local Docker evaluation
+    return compute_score_local(patch, instance)
+
+
+def compute_score_local(patch: str, instance: dict) -> Tuple[float, str, str]:
+    """Evaluate a patch with the local SWE-Smith Docker harness.
+
+    Ignores EVAL_SERVER_URL. eval_server must call this, not compute_score,
+    or it sends the request back to itself when EVAL_SERVER_URL is set.
+    """
     try:
         from swesmith.harness.eval import run_evaluation
         from swebench.harness.constants import (
