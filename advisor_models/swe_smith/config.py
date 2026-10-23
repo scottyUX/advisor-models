@@ -7,6 +7,15 @@ Defines student and advisor model prompts for generating git patches to fix bugs
 from typing import Tuple
 import uuid
 
+# Optional student-only instruction. Appended after the rendered instance
+# template when eval_swe_smith.py is run with --efficiency_prompt.
+# Training and the untrained-advisor arm load default.yaml and do not use this.
+EFFICIENCY_INSTRUCTION = (
+    "Work in as few steps as possible. As soon as the original issue is fixed "
+    "and a minimal check passes, submit. Do not add tests, refactors, or extra "
+    "exploration unless they unblock that fix."
+)
+
 # Advisor prompt template
 ADVISOR_TEMPLATE = """You are an expert software engineering advisor that will provide advice to an autonomous agent working to fix a bug in a codebase. Your role is to provide strategic, concise guidance that helps the agent solve the problem and submit a fix as quickly as possible. You will NOT be able to interact with the codebase, but the agent will have such access.
 

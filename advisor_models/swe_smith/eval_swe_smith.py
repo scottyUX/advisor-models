@@ -35,7 +35,7 @@ from tqdm import tqdm
 import litellm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .config import compute_score
+from .config import EFFICIENCY_INSTRUCTION, compute_score
 from .remote_agent_client import RemoteAgentClient
 from utils.eval_utils import compute_multi_run_statistics, format_ci_string
 
@@ -62,15 +62,18 @@ class EvalResult:
 class SWESmithEvaluator:
     """Evaluator for SWE-Smith problems using remote agent (no advisor)."""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, extra_instruction: str | None = None):
         """Initialize the evaluator with model name.
 
         Args:
             model_name: Name of the model to use for the agent
+            extra_instruction: Optional text appended to the first user message.
+                Passed only when non-empty.
         """
         print(f"Using agent model: {model_name}")
         sys.stdout.flush()
         self.model_name = model_name
+        self.extra_instruction = extra_instruction or None
         litellm.drop_params = True
 
         # Remote agent client
@@ -96,9 +99,13 @@ class SWESmithEvaluator:
             print(f"Instance: {instance_id}")
             sys.stdout.flush()
 
-            # Create remote agent session with specified model
+            # Create remote agent session with specified model.
+            # Omit extra_instruction unless --efficiency_prompt set it.
+            create_kwargs = {}
+            if self.extra_instruction:
+                create_kwargs["extra_instruction"] = self.extra_instruction
             session_id = self.remote_agent.create_session(
-                instance, model_name=self.model_name
+                instance, model_name=self.model_name, **create_kwargs
             )
             print(f"Created remote session: {session_id} with model {self.model_name}")
             sys.stdout.flush()
@@ -524,6 +531,11 @@ def main():
         default=1,
         help="Number of evaluation runs for confidence intervals (default: 1)",
     )
+    parser.add_argument(
+        "--efficiency_prompt",
+        action="store_true",
+        help="Append the fixed efficiency instruction to the student prompt",
+    )
 
     args = parser.parse_args()
 
@@ -555,7 +567,10 @@ def main():
         print(f"Running {args.num_runs} evaluation runs for confidence intervals")
 
     # Run evaluation
-    evaluator = SWESmithEvaluator(args.model)
+    evaluator = SWESmithEvaluator(
+        args.model,
+        extra_instruction=EFFICIENCY_INSTRUCTION if args.efficiency_prompt else None,
+    )
 
     if args.num_runs > 1:
         # Run multi-evaluation

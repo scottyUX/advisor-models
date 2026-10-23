@@ -9,7 +9,7 @@ import litellm
 from tenacity import (
     before_sleep_log,
     retry,
-    retry_if_not_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -18,6 +18,31 @@ from minisweagent.models import GLOBAL_MODEL_STATS
 from minisweagent.models.utils.cache_control import set_cache_control
 
 logger = logging.getLogger("litellm_model")
+
+
+def _should_retry_model_error(exc: BaseException) -> bool:
+    """Retry transient provider failures. A real missing model is not retried.
+
+    OpenRouter sometimes forwards Google's 404 for Gemini 2.5 Flash-Lite
+    ("no longer available to new users") on one route and serves the same
+    model id on the next. Those calls should wait and try again.
+    """
+    if isinstance(
+        exc,
+        (
+            litellm.exceptions.UnsupportedParamsError,
+            litellm.exceptions.PermissionDeniedError,
+            litellm.exceptions.ContextWindowExceededError,
+            litellm.exceptions.APIError,
+            litellm.exceptions.AuthenticationError,
+            KeyboardInterrupt,
+        ),
+    ):
+        return False
+    if isinstance(exc, litellm.exceptions.NotFoundError):
+        text = str(exc).lower()
+        return "no longer available" in text or "provider returned error" in text
+    return True
 
 
 @dataclass
@@ -41,18 +66,7 @@ class LitellmModel:
         stop=stop_after_attempt(4),  # Retry max 4 times
         wait=wait_exponential(multiplier=1, min=4, max=60),  # Wait 4s, 8s, 16s, 32s
         before_sleep=before_sleep_log(logger, logging.WARNING),
-        retry=retry_if_not_exception_type(
-            (
-                litellm.exceptions.UnsupportedParamsError,
-                litellm.exceptions.NotFoundError,
-                litellm.exceptions.PermissionDeniedError,
-                litellm.exceptions.ContextWindowExceededError,
-                litellm.exceptions.APIError,
-                litellm.exceptions.AuthenticationError,
-                # Removed RateLimitError - now it will retry on rate limits
-                KeyboardInterrupt,
-            )
-        ),
+        retry=retry_if_exception(_should_retry_model_error),
     )
     def _query(self, messages: list[dict[str, str]], **kwargs):
         try:
