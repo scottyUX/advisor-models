@@ -43,6 +43,10 @@ TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-4}"
 # prompt at max_generate_length (4,096) and, with zero_reward_on_non_stop, zeroes
 # longer rollouts even when resolved. Larger values let only the 28,672 prompt cap bind.
 MAX_TURNS="${MAX_TURNS:-1}"
+# Ulysses sequence parallelism for the policy and reference model: splits each
+# sequence across GPUs to cut activation and logit memory. Does not change the
+# algorithm, batch, learning rate or reward. 1 = off (upstream).
+SEQ_PARALLEL="${SEQ_PARALLEL:-1}"
 LOGGER="${LOGGER:-wandb}"  # "console" to print to stdout
 
 # ckpt_interval / hf_save_interval are in optimizer steps, not epochs.
@@ -56,7 +60,7 @@ RUN_NAME="${RUN_NAME:-swe_smith_${REPO}_${STUDENT_TAG}_2xa100}"
 CKPT_ROOT="${CKPT_ROOT:-$HOME/ckpts}"
 EXPORT_ROOT="${EXPORT_ROOT:-$HOME/exports}"
 
-echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE max_turns=$MAX_TURNS"
+echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE max_turns=$MAX_TURNS seq_parallel=$SEQ_PARALLEL"
 echo "train=$NUM_TRAIN steps/epoch=$STEPS_PER_EPOCH ckpt_interval=$CKPT_INTERVAL"
 
 cd "$REPO_ROOT"
@@ -69,6 +73,8 @@ cd "$REPO_ROOT"
     trainer.strategy=fsdp2 \
     trainer.placement.policy_num_gpus_per_node=$NUM_GPUS \
     trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
+    trainer.policy.sequence_parallel_size=$SEQ_PARALLEL \
+    trainer.ref.sequence_parallel_size=$SEQ_PARALLEL \
     generator.num_inference_engines=$NUM_GPUS \
     generator.inference_engine_tensor_parallel_size=1 \
     trainer.epochs=$EPOCHS \
