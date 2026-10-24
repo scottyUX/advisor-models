@@ -47,6 +47,11 @@ MAX_TURNS="${MAX_TURNS:-1}"
 # sequence across GPUs to cut activation and logit memory. Does not change the
 # algorithm, batch, learning rate or reward. 1 = off (upstream).
 SEQ_PARALLEL="${SEQ_PARALLEL:-1}"
+# FSDP CPU offload of the policy's params, grads and optimizer state (moved to GPU
+# per layer as needed). Frees GPU memory; slower update; no recipe change.
+# 0 = off (upstream). The reference model already offloads by default.
+CPU_OFFLOAD="${CPU_OFFLOAD:-0}"
+[ "$CPU_OFFLOAD" = "1" ] && POLICY_CPU_OFFLOAD=true || POLICY_CPU_OFFLOAD=false
 LOGGER="${LOGGER:-wandb}"  # "console" to print to stdout
 
 # ckpt_interval / hf_save_interval are in optimizer steps, not epochs.
@@ -60,7 +65,7 @@ RUN_NAME="${RUN_NAME:-swe_smith_${REPO}_${STUDENT_TAG}_2xa100}"
 CKPT_ROOT="${CKPT_ROOT:-$HOME/ckpts}"
 EXPORT_ROOT="${EXPORT_ROOT:-$HOME/exports}"
 
-echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE max_turns=$MAX_TURNS seq_parallel=$SEQ_PARALLEL"
+echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE max_turns=$MAX_TURNS seq_parallel=$SEQ_PARALLEL cpu_offload=$POLICY_CPU_OFFLOAD"
 echo "train=$NUM_TRAIN steps/epoch=$STEPS_PER_EPOCH ckpt_interval=$CKPT_INTERVAL"
 
 cd "$REPO_ROOT"
@@ -75,6 +80,7 @@ cd "$REPO_ROOT"
     trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
     trainer.policy.sequence_parallel_size=$SEQ_PARALLEL \
     trainer.ref.sequence_parallel_size=$SEQ_PARALLEL \
+    trainer.policy.fsdp_config.cpu_offload=$POLICY_CPU_OFFLOAD \
     generator.num_inference_engines=$NUM_GPUS \
     generator.inference_engine_tensor_parallel_size=1 \
     trainer.epochs=$EPOCHS \
