@@ -39,6 +39,10 @@ REPO="${REPO:-jd__tenacity}"
 NUM_GPUS="${NUM_GPUS:-2}"
 EPOCHS="${EPOCHS:-18}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-4}"
+# generator.max_turns: 1 (upstream default) caps all advice + observations after the
+# prompt at max_generate_length (4,096) and, with zero_reward_on_non_stop, zeroes
+# longer rollouts even when resolved. Larger values let only the 28,672 prompt cap bind.
+MAX_TURNS="${MAX_TURNS:-1}"
 LOGGER="${LOGGER:-wandb}"  # "console" to print to stdout
 
 # ckpt_interval / hf_save_interval are in optimizer steps, not epochs.
@@ -52,7 +56,7 @@ RUN_NAME="${RUN_NAME:-swe_smith_${REPO}_${STUDENT_TAG}_2xa100}"
 CKPT_ROOT="${CKPT_ROOT:-$HOME/ckpts}"
 EXPORT_ROOT="${EXPORT_ROOT:-$HOME/exports}"
 
-echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE"
+echo "run=$RUN_NAME student=$AGENT_MODEL gpus=$NUM_GPUS epochs=$EPOCHS batch=$TRAIN_BATCH_SIZE max_turns=$MAX_TURNS"
 echo "train=$NUM_TRAIN steps/epoch=$STEPS_PER_EPOCH ckpt_interval=$CKPT_INTERVAL"
 
 cd "$REPO_ROOT"
@@ -99,5 +103,6 @@ cd "$REPO_ROOT"
     trainer.resume_mode=latest \
     trainer.ckpt_path="$CKPT_ROOT/$RUN_NAME" \
     generator.zero_reward_on_non_stop=true \
+    generator.max_turns=$MAX_TURNS \
     trainer.export_path="$EXPORT_ROOT/$RUN_NAME" \
     "$@"
