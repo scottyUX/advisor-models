@@ -53,8 +53,9 @@ SMOKE_RUN_NAME="${SMOKE_RUN_NAME:-exp-07_arm-trainsmoke_split-tenacitytrain_seed
 fail() { echo "E7 STOP: $*" >&2; exit 1; }
 
 # --- preflight -------------------------------------------------------------
+WANT_GPUS="${NUM_GPUS:-2}"
 GPUS=$(nvidia-smi -L 2>/dev/null | grep -c "A100")
-[ "$GPUS" -eq 2 ] || fail "expected 2 A100s, found $GPUS (do not train on one GPU)"
+[ "$GPUS" -eq "$WANT_GPUS" ] || fail "expected $WANT_GPUS A100s, found $GPUS (do not train on one GPU)"
 for url in "$AGENT_SERVER_URL" "$EVAL_SERVER_URL"; do
     curl -sf -m 10 "$url/health" >/dev/null || fail "server not healthy: $url"
 done
