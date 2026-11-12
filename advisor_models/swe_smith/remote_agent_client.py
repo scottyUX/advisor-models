@@ -47,13 +47,18 @@ class RemoteAgentClient:
             raise
 
     def create_session(
-        self, instance: Dict[str, Any], model_name: str = "gpt-4.1-mini"
+        self,
+        instance: Dict[str, Any],
+        model_name: str = "gpt-4.1-mini",
+        extra_instruction: str | None = None,
     ) -> str:
         """Create a new agent session.
 
         Args:
             instance: SWE-Smith instance dict with repo, problem_statement, etc.
             model_name: LLM model to use for the agent (default: gpt-4.1-mini)
+            extra_instruction: Optional text appended to the first user message.
+                Omitted from the request when missing or empty.
 
         Returns:
             session_id: Unique identifier for this session
@@ -61,10 +66,13 @@ class RemoteAgentClient:
         Raises:
             RuntimeError: If session creation fails
         """
+        payload: Dict[str, Any] = {"instance": instance, "model_name": model_name}
+        if extra_instruction:
+            payload["extra_instruction"] = extra_instruction
         try:
             response = requests.post(
                 f"{self.server_url}/agent/session/create",
-                json={"instance": instance, "model_name": model_name},
+                json=payload,
                 timeout=120,  # Container startup can take time
             )
 

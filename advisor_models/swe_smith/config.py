@@ -7,6 +7,15 @@ Defines student and advisor model prompts for generating git patches to fix bugs
 from typing import Tuple
 import uuid
 
+# Optional student-only instruction. Appended after the rendered instance
+# template when eval_swe_smith.py is run with --efficiency_prompt.
+# Training and the untrained-advisor arm load default.yaml and do not use this.
+EFFICIENCY_INSTRUCTION = (
+    "Work in as few steps as possible. As soon as the original issue is fixed "
+    "and a minimal check passes, submit. Do not add tests, refactors, or extra "
+    "exploration unless they unblock that fix."
+)
+
 # Advisor prompt template
 ADVISOR_TEMPLATE = """You are an expert software engineering advisor that will provide advice to an autonomous agent working to fix a bug in a codebase. Your role is to provide strategic, concise guidance that helps the agent solve the problem and submit a fix as quickly as possible. You will NOT be able to interact with the codebase, but the agent will have such access.
 
@@ -216,7 +225,15 @@ def compute_score(patch: str, instance: dict) -> Tuple[float, str, str]:
         except Exception as e:
             return 0.0, "ERROR", f"Remote evaluation failed: {str(e)}"
 
-    # Use local Docker evaluation
+    return compute_score_local(patch, instance)
+
+
+def compute_score_local(patch: str, instance: dict) -> Tuple[float, str, str]:
+    """Evaluate a patch with the local SWE-Smith Docker harness.
+
+    Ignores EVAL_SERVER_URL. eval_server must call this, not compute_score,
+    or it sends the request back to itself when EVAL_SERVER_URL is set.
+    """
     try:
         from swesmith.harness.eval import run_evaluation
         from swebench.harness.constants import (

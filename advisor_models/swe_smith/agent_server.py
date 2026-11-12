@@ -46,6 +46,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Fail a session that has made no successful model call after this many steps.
+NO_CALL_ABORT_STEPS = 3
+
 app = Flask(__name__)
 
 
@@ -60,6 +63,7 @@ class AgentSession:
         max_steps: int = 40,
         cost_limit: float = 3.0,
         log_dir: Optional[str] = None,
+        extra_instruction: Optional[str] = None,
     ):
         """Initialize agent session.
 
@@ -69,6 +73,8 @@ class AgentSession:
             model_name: LLM model to use
             max_steps: Maximum agent steps
             cost_limit: Maximum cost in dollars
+            extra_instruction: Optional text appended to the first user message.
+                Missing or empty leaves that message unchanged.
         """
         self.session_id = session_id
         self.instance = instance
@@ -76,6 +82,7 @@ class AgentSession:
         self.max_steps = max_steps
         self.cost_limit = cost_limit
         self.log_dir = Path(log_dir) if log_dir else None
+        self.extra_instruction = extra_instruction or None
 
         self.created_at = time.time()
         self.last_accessed = time.time()
@@ -195,9 +202,10 @@ class AgentSession:
             self.agent.add_message(
                 "system", self.agent.render_template(agent_config.system_template)
             )
-            self.agent.add_message(
-                "user", self.agent.render_template(agent_config.instance_template)
-            )
+            user_message = self.agent.render_template(agent_config.instance_template)
+            if self.extra_instruction:
+                user_message = user_message + "\n" + self.extra_instruction
+            self.agent.add_message("user", user_message)
 
             self._log_initialization(problem_statement)
 
@@ -240,6 +248,7 @@ class AgentSession:
             self.agent.add_advice(advisor_feedback)
 
             agent_actions_start_idx = len(self.agent.messages)
+            last_error_msg = None
 
             for i in range(max_steps_per_call):
                 if self.agent.model.n_calls >= self.max_steps:
@@ -264,18 +273,35 @@ class AgentSession:
 
                     if isinstance(e, litellm.exceptions.RateLimitError):
                         logger.warning(f"Rate limit hit for session {self.session_id}")
+                        self.error = "Rate limit hit"
                         self.terminated = True
                         break
 
                     error_msg = self._clean_error_message(e)
+                    last_error_msg = error_msg
                     self.agent.add_message("user", error_msg)
+
+                # A dead key, empty balance, or unpriced model raises on every
+                # step without the model ever acting. Fail the session instead
+                # of letting it run to the step cap and score as unresolved.
+                if (
+                    self.agent.model.n_calls == 0
+                    and self.total_steps >= NO_CALL_ABORT_STEPS
+                ):
+                    self.error = (
+                        f"No successful model calls after {self.total_steps} "
+                        f"steps; last error: {last_error_msg}"
+                    )
+                    logger.error(f"Session {self.session_id}: {self.error}")
+                    self.terminated = True
+                    break
 
             observation = self._build_observation()
 
             agent_actions = self.agent.messages[agent_actions_start_idx:]
             self._log_step_completion(agent_actions, observation)
 
-            return {
+            response = {
                 "terminated": self.terminated,
                 "observation": observation,
                 "total_steps": self.total_steps,
@@ -283,6 +309,9 @@ class AgentSession:
                 "rolling_summary": self.rolling_summary,
                 "last_summarized_step": self.last_summarized_step,
             }
+            if self.error:
+                response["error"] = self.error
+            return response
 
         except Exception as e:
             logger.error(
@@ -510,13 +539,17 @@ class AgentSessionManager:
         self.cleanup_thread.start()
 
     def create_session(
-        self, instance: Dict[str, Any], model_name: str = "gpt-4.1-mini"
+        self,
+        instance: Dict[str, Any],
+        model_name: str = "gpt-4.1-mini",
+        extra_instruction: Optional[str] = None,
     ) -> str:
         """Create a new agent session.
 
         Args:
             instance: SWE-Smith instance dict
             model_name: LLM model to use for the agent
+            extra_instruction: Optional text appended to the first user message.
 
         Returns:
             session_id
@@ -534,7 +567,11 @@ class AgentSessionManager:
 
             logger.info(f"Creating session {session_id} with model {model_name}")
             session = AgentSession(
-                session_id, instance, model_name=model_name, log_dir=self.log_dir
+                session_id,
+                instance,
+                model_name=model_name,
+                log_dir=self.log_dir,
+                extra_instruction=extra_instruction,
             )
             self.sessions[session_id] = session
 
@@ -626,7 +663,8 @@ def create_session():
             "problem_statement": "...",
             ...
         },
-        "model_name": "gpt-4.1-mini"
+        "model_name": "gpt-4.1-mini",
+        "extra_instruction": "optional text appended to the first user message"
     }
 
     Returns:
@@ -643,8 +681,11 @@ def create_session():
 
         instance = data["instance"]
         model_name = data.get("model_name", "gpt-4.1-mini")
+        extra_instruction = data.get("extra_instruction") or None
 
-        session_id = session_manager.create_session(instance, model_name=model_name)
+        session_id = session_manager.create_session(
+            instance, model_name=model_name, extra_instruction=extra_instruction
+        )
 
         return jsonify({"session_id": session_id, "status": "created"})
 

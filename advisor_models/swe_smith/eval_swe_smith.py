@@ -35,7 +35,7 @@ from tqdm import tqdm
 import litellm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .config import compute_score
+from .config import EFFICIENCY_INSTRUCTION, compute_score
 from .remote_agent_client import RemoteAgentClient
 from utils.eval_utils import compute_multi_run_statistics, format_ci_string
 
@@ -62,15 +62,18 @@ class EvalResult:
 class SWESmithEvaluator:
     """Evaluator for SWE-Smith problems using remote agent (no advisor)."""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, extra_instruction: str | None = None):
         """Initialize the evaluator with model name.
 
         Args:
             model_name: Name of the model to use for the agent
+            extra_instruction: Optional text appended to the first user message.
+                Passed only when non-empty.
         """
         print(f"Using agent model: {model_name}")
         sys.stdout.flush()
         self.model_name = model_name
+        self.extra_instruction = extra_instruction or None
         litellm.drop_params = True
 
         # Remote agent client
@@ -96,9 +99,13 @@ class SWESmithEvaluator:
             print(f"Instance: {instance_id}")
             sys.stdout.flush()
 
-            # Create remote agent session with specified model
+            # Create remote agent session with specified model.
+            # Omit extra_instruction unless --efficiency_prompt set it.
+            create_kwargs = {}
+            if self.extra_instruction:
+                create_kwargs["extra_instruction"] = self.extra_instruction
             session_id = self.remote_agent.create_session(
-                instance, model_name=self.model_name
+                instance, model_name=self.model_name, **create_kwargs
             )
             print(f"Created remote session: {session_id} with model {self.model_name}")
             sys.stdout.flush()
@@ -110,6 +117,9 @@ class SWESmithEvaluator:
                 advisor_feedback="",
                 max_steps=40,
             )
+
+            if result.get("error"):
+                raise RuntimeError(f"Agent session failed: {result['error']}")
 
             total_steps = result.get("total_steps", 0)
             cost = result.get("cost", 0.0)
@@ -182,6 +192,10 @@ class SWESmithEvaluator:
             print(f"Generated patch length: {len(generated_patch)} chars")
             print(f"Agent info: {agent_info}")
             sys.stdout.flush()
+
+            # Don't score a failed session as an unresolved attempt.
+            if agent_info.get("status") == "error":
+                raise RuntimeError(agent_info.get("message", "agent error"))
 
             # Evaluate using SWE-Smith harness
             reward, run_id, info = compute_score(generated_patch, instance)
@@ -300,7 +314,10 @@ class SWESmithEvaluator:
 
 
 def save_session_mapping(results: List[EvalResult], output_file: str):
-    """Save session ID to success/failure mapping.
+    """Save per-instance results, keyed by instance_id.
+
+    Every instance gets a row, including errored ones with no session_id,
+    so a failed session is visible to later analysis instead of missing.
 
     Args:
         results: List of evaluation results
@@ -308,22 +325,24 @@ def save_session_mapping(results: List[EvalResult], output_file: str):
     """
     mapping = {}
     for r in results:
-        if r.session_id:
-            mapping[r.session_id] = {
-                "instance_id": r.instance_id,
-                "eval_id": r.eval_id,
-                "diff": r.diff,
-                "resolved": r.resolved,
-                "status": r.status,
-                "total_steps": r.total_steps,
-                "error": r.error,
-            }
+        mapping[r.instance_id] = {
+            "instance_id": r.instance_id,
+            "session_id": r.session_id,
+            "eval_id": r.eval_id,
+            "diff": r.diff,
+            "resolved": r.resolved,
+            "status": r.status,
+            "total_steps": r.total_steps,
+            "agent_cost": r.agent_cost,
+            "error": r.error,
+        }
 
     with open(output_file, "w") as f:
         json.dump(mapping, f, indent=2)
 
+    errors = sum(1 for row in mapping.values() if row["error"])
     print(f"\nSession mapping saved to: {output_file}")
-    print(f"Total sessions tracked: {len(mapping)}")
+    print(f"Total instances tracked: {len(mapping)} ({errors} errored)")
 
 
 def print_summary(results: List[EvalResult], aggregate_stats: Dict[str, Any] = None):
@@ -512,6 +531,11 @@ def main():
         default=1,
         help="Number of evaluation runs for confidence intervals (default: 1)",
     )
+    parser.add_argument(
+        "--efficiency_prompt",
+        action="store_true",
+        help="Append the fixed efficiency instruction to the student prompt",
+    )
 
     args = parser.parse_args()
 
@@ -543,7 +567,10 @@ def main():
         print(f"Running {args.num_runs} evaluation runs for confidence intervals")
 
     # Run evaluation
-    evaluator = SWESmithEvaluator(args.model)
+    evaluator = SWESmithEvaluator(
+        args.model,
+        extra_instruction=EFFICIENCY_INSTRUCTION if args.efficiency_prompt else None,
+    )
 
     if args.num_runs > 1:
         # Run multi-evaluation

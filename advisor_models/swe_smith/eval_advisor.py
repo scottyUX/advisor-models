@@ -77,7 +77,6 @@ import subprocess
 
 from .config import compute_score, ADVISOR_TEMPLATE
 from .remote_agent_client import RemoteAgentClient
-from utils.vllm import start_vllm_server
 from utils.eval_utils import compute_multi_run_statistics, format_ci_string
 
 litellm.drop_params = True
@@ -164,6 +163,20 @@ def clean_error_message(error: Exception, max_length: int = 300) -> str:
 
     error_type = type(error).__name__
     return f"[{error_type}] {cleaned_str}"
+
+
+# The served advisor context is 32768. A 4096-token reply reserve plus the
+# stacked transcript was enough to overflow it (34887 requested). Advice is a
+# short comment, and each turn only needs the latest observation.
+ADVISOR_MAX_TOKENS = 1024
+ADVISOR_OBSERVATION_CHARS = 60_000
+
+
+def _tail_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    return f"[earlier context omitted, {omitted} characters]\n{text[-limit:]}"
 
 
 @dataclass
@@ -257,6 +270,10 @@ class AdvisorDebugger:
             )
             self.temp_model_dir = temp_dir
 
+            # utils.vllm is not in the repo; import only on the --is_local path
+            # so the hosted_vllm and student-only paths load without it.
+            from utils.vllm import start_vllm_server
+
             # Start vLLM server
             print(f"\nStarting vLLM server for model: {model_path_to_serve}")
             served_model_name = "local-advisor-model"
@@ -283,6 +300,25 @@ class AdvisorDebugger:
         # Remote agent client (matching env.py)
         self.remote_agent = RemoteAgentClient()
 
+    def _complete_advisor(self, messages: List[Dict[str, str]]) -> tuple[str, float]:
+        """One advisor call. The reply reserve stays small so the 32768 window fits."""
+        extra_body = {}
+        if self.no_think:
+            extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
+        response = litellm.completion(
+            model=self.advisor_model,
+            messages=messages,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            min_p=self.min_p,
+            max_tokens=ADVISOR_MAX_TOKENS,
+            extra_body=extra_body,
+        )
+        guidance = response.choices[0].message.content
+        advisor_cost = response._hidden_params.get("response_cost") or 0.0
+        return guidance, advisor_cost
+
     def get_initial_advisor_guidance(
         self,
         problem_statement: str,
@@ -294,53 +330,19 @@ class AdvisorDebugger:
         Args:
             problem_statement: The problem to solve
             repo: Repository name
-            advisor_messages: The conversation history (modified in place)
+            advisor_messages: Holds the task prompt only. Later turns do not
+                append observations onto this list.
 
         Returns:
             Tuple of (guidance_text, cost)
         """
-        # Build initial advisor prompt (exact format from config.py ADVISOR_TEMPLATE)
         prompt_text = ADVISOR_TEMPLATE.format(
             problem_statement=problem_statement,
             repo=repo,
         )
-        advisor_messages.append(
-            {
-                "role": "user",
-                "content": prompt_text,
-            }
-        )
-
+        advisor_messages.append({"role": "user", "content": prompt_text})
         try:
-            extra_body = {}
-            if self.no_think:
-                extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
-
-            response = litellm.completion(
-                model=self.advisor_model,
-                messages=advisor_messages,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                top_k=self.top_k,
-                min_p=self.min_p,
-                max_tokens=4096,
-                extra_body=extra_body,
-            )
-
-            guidance = response.choices[0].message.content
-            advisor_cost = response._hidden_params["response_cost"]
-            if not advisor_cost:
-                advisor_cost = 0.0
-
-            # Add assistant response to message history
-            advisor_messages.append(
-                {
-                    "role": "assistant",
-                    "content": guidance,
-                }
-            )
-            return guidance, advisor_cost
-
+            return self._complete_advisor(advisor_messages)
         except Exception as e:
             raise Exception(f"Error getting initial advisor guidance: {e}")
 
@@ -412,6 +414,11 @@ class AdvisorDebugger:
                     max_steps=self.max_steps_per_advisor_call,
                 )
 
+                # A failed session (dead key, empty balance, rate limit) is an
+                # error, not an unresolved attempt; same as eval_swe_smith.
+                if result.get("error"):
+                    raise RuntimeError(f"Agent session failed: {result['error']}")
+
                 # Parse result (matching env.py step)
                 if result.get("terminated"):
                     agent_terminated = True
@@ -429,45 +436,21 @@ class AdvisorDebugger:
                             observation_text
                         )
 
-                    # Add observation to advisor conversation history
-                    advisor_messages.append(
+                    # Task prompt, the previous advice, and this turn's observation.
+                    # Earlier observations stay out so the transcript cannot grow
+                    # past the 32768 context.
+                    request_messages = [
+                        advisor_messages[0],
+                        {"role": "assistant", "content": guidance},
                         {
                             "role": "user",
-                            "content": observation_text,
-                        }
-                    )
-
-                    # Call advisor model to get next guidance
+                            "content": _tail_text(
+                                observation_text, ADVISOR_OBSERVATION_CHARS
+                            ),
+                        },
+                    ]
                     try:
-                        extra_body = {}
-                        if self.no_think:
-                            extra_body = {
-                                "chat_template_kwargs": {"enable_thinking": False}
-                            }
-
-                        response = litellm.completion(
-                            model=self.advisor_model,
-                            messages=advisor_messages,
-                            temperature=self.temperature,
-                            top_p=self.top_p,
-                            top_k=self.top_k,
-                            min_p=self.min_p,
-                            max_tokens=4096,
-                            extra_body=extra_body,
-                        )
-
-                        guidance = response.choices[0].message.content
-                        advisor_cost = response._hidden_params["response_cost"]
-                        if not advisor_cost:
-                            advisor_cost = 0.0
-
-                        # Add assistant response to message history
-                        advisor_messages.append(
-                            {
-                                "role": "assistant",
-                                "content": guidance,
-                            }
-                        )
+                        guidance, advisor_cost = self._complete_advisor(request_messages)
                     except Exception as e:
                         raise Exception(f"Error getting advisor guidance: {e}")
 
@@ -757,7 +740,10 @@ class AdvisorDebugger:
 
 
 def save_session_mapping(results: List[AdvisorEvalResult], output_file: str):
-    """Save session ID to success/failure mapping.
+    """Save per-instance results, keyed by instance_id.
+
+    Every instance gets a row, including errored ones with no session_id,
+    so a failed session is visible to later analysis instead of missing.
 
     Args:
         results: List of evaluation results
@@ -765,24 +751,27 @@ def save_session_mapping(results: List[AdvisorEvalResult], output_file: str):
     """
     mapping = {}
     for r in results:
-        if r.session_id:
-            mapping[r.session_id] = {
-                "instance_id": r.instance_id,
-                "eval_id": r.eval_id,
-                "diff": r.generated_patch,
-                "resolved": r.resolved,
-                "status": r.status,
-                "total_steps": r.total_steps,
-                "advisor_calls": r.advisor_calls,
-                "advisor_guidance_history": r.advisor_guidance_history,
-                "error": r.error,
-            }
+        mapping[r.instance_id] = {
+            "instance_id": r.instance_id,
+            "session_id": r.session_id,
+            "eval_id": r.eval_id,
+            "diff": r.generated_patch,
+            "resolved": r.resolved,
+            "status": r.status,
+            "total_steps": r.total_steps,
+            "agent_cost": r.agent_cost,
+            "advisor_cost": r.advisor_cost,
+            "advisor_calls": r.advisor_calls,
+            "advisor_guidance_history": r.advisor_guidance_history,
+            "error": r.error,
+        }
 
     with open(output_file, "w") as f:
         json.dump(mapping, f, indent=2)
 
+    errors = sum(1 for row in mapping.values() if row["error"])
     print(f"\nSession mapping saved to: {output_file}")
-    print(f"Total sessions tracked: {len(mapping)}")
+    print(f"Total instances tracked: {len(mapping)} ({errors} errored)")
 
 
 def print_summary(

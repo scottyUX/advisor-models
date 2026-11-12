@@ -4,6 +4,7 @@ from uuid import uuid4
 import skyrl_gym
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
+from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
 from tqdm.asyncio import tqdm
 
@@ -405,6 +406,21 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         individual_rollout_metrics = [output[6] for output in all_outputs]
         rollout_metrics = self._rollout_metrics(responses, rewards, individual_rollout_metrics)
+
+        # Logging only (E7): how often the length cap ends a rollout, and how many
+        # rewarded rollouts zero_reward_on_non_stop is about to zero. Measured before
+        # zeroing so the raw environment reward is visible.
+        n = len(stop_reasons)
+        length_stopped = [r != "stop" for r in stop_reasons]
+        zeroed = [s and r > 0.0 for s, r in zip(length_stopped, rewards)]
+        rollout_metrics["generate/frac_stop_not_stop"] = sum(length_stopped) / n if n else 0.0
+        rollout_metrics["generate/frac_rewarded_zeroed"] = sum(zeroed) / n if n else 0.0
+        rollout_metrics["generate/avg_raw_reward_before_zeroing"] = sum(rewards) / n if n else 0.0
+        logger.info(
+            f"E7 rollouts: n={n} not_stop={sum(length_stopped)} "
+            f"rewarded={sum(r > 0.0 for r in rewards)} rewarded_zeroed={sum(zeroed)} "
+            f"raw_reward_mean={(sum(rewards) / n if n else 0.0):.4f}"
+        )
 
         if self.generator_cfg.zero_reward_on_non_stop:
             # set reward to 0 if the stop reason is not "stop"
