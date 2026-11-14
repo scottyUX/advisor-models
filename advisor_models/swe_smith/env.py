@@ -16,23 +16,21 @@ import json
 import os
 
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
-from omegaconf import DictConfig
 
 from .remote_agent_client import RemoteAgentClient
 from .config import compute_score
-
-LENGTH_COEFFICIENT = 0.5
-MAX_STEPS = 40
+from .reward import e7_reward
 
 
 class SWESmithEnv(BaseTextEnv):
     """Environment for SWE-Smith with remote agent execution."""
 
-    def __init__(self, env_config: DictConfig, extras: Dict[str, Any] = {}):
+    def __init__(self, env_config: Any = None, extras: Dict[str, Any] = {}):
         """Initialize the environment.
 
         Args:
-            env_config: The environment configuration
+            env_config: The environment configuration (unused). E7's SkyRL fork
+                passes an omegaconf DictConfig, upstream SkyRL a dict.
             extras: Additional metadata including:
                 - reward_spec: Contains ground_truth instance
                 - original_question: Problem statement
@@ -189,11 +187,8 @@ class SWESmithEnv(BaseTextEnv):
             patch = self.remote_agent.get_patch(self.session_id)
 
             # Evaluate patch
-            reward, eval_id, _ = compute_score(patch, self.ground_truth)
-            if reward == 1.0:
-                reward = (1 - LENGTH_COEFFICIENT) + LENGTH_COEFFICIENT * (
-                    MAX_STEPS - self.total_steps_taken
-                ) / MAX_STEPS
+            score, eval_id, _ = compute_score(patch, self.ground_truth)
+            reward = e7_reward(score, self.total_steps_taken)
             print(f"Reward: {reward}")
             sys.stdout.flush()
 
