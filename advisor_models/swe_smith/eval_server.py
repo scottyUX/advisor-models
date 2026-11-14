@@ -76,6 +76,13 @@ def main():
 
     args = parser.parse_args()
 
+    # E10: patch swesmith for the ARM image at startup, so a bad override stops
+    # the server here instead of failing every evaluation. No-op for E7.
+    from .swesmith_arm import describe, install
+
+    if install():
+        logger.info(f"swesmith_arm active: {describe()}")
+
     logger.info(f"Starting server on {args.host}:{args.port}")
     app.run(host=args.host, port=args.port, threaded=True)
 

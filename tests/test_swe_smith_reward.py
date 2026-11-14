@@ -5,7 +5,9 @@ The fixture rewards were recorded from E7's own SWESmithEnv (see
 tests/fixtures/make_swe_smith_reward_fixtures.py). Each rollout is replayed
 through the current env with a fake agent server and a fake grader.
 
-Run: python -m unittest tests/test_swe_smith_reward.py
+Run: python -m unittest discover -s tests -p "test_swe_smith_reward.py"
+(Not `python -m unittest tests/...`: the swesmith wheel installs a top-level
+`tests` package that shadows this folder once swesmith is installed.)
 """
 
 import json

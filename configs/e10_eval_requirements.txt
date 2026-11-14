@@ -1,0 +1,20 @@
+# E10 grading on the DGX Spark: what scripts/e10_check_swesmith_arm.py and the
+# eval server need, outside the trainer image. Install into a venv in your home
+# folder (not system-wide):
+#   python3 -m venv ~/venvs/e10-eval
+#   ~/venvs/e10-eval/bin/pip install -r configs/e10_eval_requirements.txt
+#
+# swesmith_arm.py supports only swesmith 0.0.9. swesmith 0.0.9 does not import
+# with swebench 5.x (KEY_INSTANCE_ID moved); 4.1.0 works. E7's worker versions
+# are not recorded in advisor-models: 0.0.9 names images swebench/..., E7's
+# instances say jyangballin/..., so E7 likely ran an older swesmith.
+swesmith==0.0.9
+swebench==4.1.0
+docker==7.2.0
+ghapi==1.1.1
+python-dotenv==1.2.4
+unidiff==1.0.1
+datasets==5.2.0
+tqdm==4.70.1
+requests==2.34.2
+flask

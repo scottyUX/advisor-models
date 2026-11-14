@@ -20,6 +20,31 @@
 #   LoRA (new in E10, spec §2)                    -> trainer.policy.model.lora.*
 # Required on the Spark (spark/README.md): trainer.flash_attn=false,
 # trainer.remove_microbatch_padding=false.
+#
+# zero_reward_on_non_stop: upstream's rule, kept as is (Scott, 13 Nov; recorded
+# as a deviation from E7 in the spec). Exact condition at SkyRL 3e8700f,
+# skyrl/train/generators/skyrl_gym_generator.py:
+#   - agent_loop: before each advisor turn, if len(input_ids) > max_input_length,
+#     stop_reason = "length" and the rollout ends. input_ids is the whole
+#     conversation so far (prompt + every advisor turn + every observation), and
+#     max_input_length defaults to trainer.max_prompt_length = 28672 (strictly
+#     greater than: exactly 28,672 tokens still generates).
+#   - otherwise stop_reason is what vLLM returned for the rollout's LAST advisor
+#     generation: "stop", or "length" if that turn hit
+#     sampling_params.max_generate_length = 4096 (or another reason, e.g. "abort").
+#   - generate(): with zero_reward_on_non_stop=true, _zero_reward_if_not_stop sets
+#     the reward to 0 (every per-token reward) for every rollout whose
+#     stop_reason != "stop".
+# E7's fork differed in two ways (advisor-models SkyRL/skyrl-train,
+# skyrl_gym_generator.py): (1) it checked len(input_ids) > max_input_length
+# after every env step, including the last one, so a rollout the env had
+# already ended (done=True) could still be marked "length"; upstream checks only
+# before another turn, so a finished rollout keeps its last generation's stop
+# reason. (2) After the loop it also set "length" when the total response (all
+# turns and observations) exceeded max_generate_length + max_input_length -
+# prompt length; upstream has no such check. The per-step counts of "length", other
+# non-"stop" and zeroed rollouts are logged by generator_upstream.py
+# (generate/e10_rollouts_* and an "E10 rollouts: ..." line).
 
 set -euo pipefail
 

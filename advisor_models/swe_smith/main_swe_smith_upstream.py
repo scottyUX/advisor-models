@@ -13,10 +13,32 @@ spec amendment authorizes it.
 import sys
 
 import ray
+from skyrl.backends.skyrl_train.inference_servers.utils import resolve_policy_model_name
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.entrypoints.main_base import BasePPOExp, validate_cfg
 from skyrl.train.utils import initialize_ray
 from skyrl_gym.envs import register
+
+
+class E10SWESmithExp(BasePPOExp):
+    """Upstream's experiment with the E10 generator (per-step rollout counts).
+
+    The generator adds metrics and a log line only; generation and rewards are
+    upstream's (see generator_upstream.py).
+    """
+
+    def get_generator(self, cfg, tokenizer, inference_engine_client):
+        if cfg.generator.vision_language_generator:
+            raise ValueError("E10 uses the text generator only.")
+        from .generator_upstream import E10SkyRLGymGenerator
+
+        return E10SkyRLGymGenerator(
+            generator_cfg=cfg.generator,
+            skyrl_gym_cfg=cfg.environment.skyrl_gym,
+            inference_engine_client=inference_engine_client,
+            tokenizer=tokenizer,
+            policy_model_name=resolve_policy_model_name(cfg),
+        )
 
 
 @ray.remote(num_cpus=1)
@@ -28,7 +50,7 @@ def skyrl_entrypoint(cfg: SkyRLTrainConfig):
     )
 
     # Make sure the training loop is not run on the head node.
-    exp = BasePPOExp(cfg)
+    exp = E10SWESmithExp(cfg)
     exp.run()
 
 
