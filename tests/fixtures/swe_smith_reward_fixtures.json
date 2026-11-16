@@ -1,0 +1,461 @@
+{
+  "source": "E7 SWESmithEnv at advisor-models 2403225",
+  "rollouts": [
+    {
+      "name": "resolved_in_1_step",
+      "instance_id": "jd__tenacity.fx1",
+      "steps": [
+        {
+          "terminated": true,
+          "total_steps": 1
+        }
+      ],
+      "patch": "diff a",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.9875
+      ],
+      "e7_dones": [
+        true
+      ],
+      "e7_advice_sent": [
+        "advice"
+      ]
+    },
+    {
+      "name": "resolved_in_6_steps",
+      "instance_id": "jd__tenacity.fx2",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 6
+        }
+      ],
+      "patch": "diff b",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0,
+        0.925
+      ],
+      "e7_dones": [
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "resolved_in_22_steps",
+      "instance_id": "jd__tenacity.fx3",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 10",
+          "total_steps": 10,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 15",
+          "total_steps": 15,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 20",
+          "total_steps": 20,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 22
+        }
+      ],
+      "patch": "diff c",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.725
+      ],
+      "e7_dones": [
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "resolved_at_step_cap_40",
+      "instance_id": "jd__tenacity.fx4",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 10",
+          "total_steps": 10,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 15",
+          "total_steps": 15,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 20",
+          "total_steps": 20,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 25",
+          "total_steps": 25,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 30",
+          "total_steps": 30,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 35",
+          "total_steps": 35,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 40
+        }
+      ],
+      "patch": "diff d",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.5
+      ],
+      "e7_dones": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "unresolved_at_step_cap_40",
+      "instance_id": "jd__tenacity.fx5",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 10",
+          "total_steps": 10,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 15",
+          "total_steps": 15,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 20",
+          "total_steps": 20,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 25",
+          "total_steps": 25,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 30",
+          "total_steps": 30,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": false,
+          "observation": "obs after 35",
+          "total_steps": 35,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 40
+        }
+      ],
+      "patch": "diff e",
+      "eval_score": 0.0,
+      "e7_rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "e7_dones": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "unresolved_early_submit",
+      "instance_id": "jd__tenacity.fx6",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 9
+        }
+      ],
+      "patch": "diff f",
+      "eval_score": 0.0,
+      "e7_rewards": [
+        0.0,
+        0.0
+      ],
+      "e7_dones": [
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "think_block_stripped",
+      "instance_id": "jd__tenacity.fx7",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 8
+        }
+      ],
+      "patch": "diff g",
+      "eval_score": 1.0,
+      "actions": [
+        "<think>private reasoning</think>\n  Check retry.py first."
+      ],
+      "e7_rewards": [
+        0.0,
+        0.9
+      ],
+      "e7_dones": [
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "Check retry.py first.",
+        "Check retry.py first."
+      ]
+    },
+    {
+      "name": "server_error_terminates_then_scored",
+      "instance_id": "jd__tenacity.fx8",
+      "steps": [
+        {
+          "terminated": true,
+          "total_steps": 3,
+          "error": "No successful model calls"
+        }
+      ],
+      "patch": "",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.9625
+      ],
+      "e7_dones": [
+        true
+      ],
+      "e7_advice_sent": [
+        "advice"
+      ]
+    },
+    {
+      "name": "create_session_fails",
+      "instance_id": "jd__tenacity.fx9",
+      "init_error": true,
+      "steps": [],
+      "patch": "diff i",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0
+      ],
+      "e7_dones": [
+        true
+      ],
+      "e7_advice_sent": []
+    },
+    {
+      "name": "execute_step_raises",
+      "instance_id": "jd__tenacity.fx10",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        "raise"
+      ],
+      "patch": "diff j",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0,
+        0.0
+      ],
+      "e7_dones": [
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice"
+      ]
+    },
+    {
+      "name": "get_patch_raises",
+      "instance_id": "jd__tenacity.fx11",
+      "steps": [
+        {
+          "terminated": false,
+          "observation": "obs after 5",
+          "total_steps": 5,
+          "rolling_summary": "",
+          "last_summarized_step": 0
+        },
+        {
+          "terminated": true,
+          "total_steps": 12
+        }
+      ],
+      "patch": "raise",
+      "eval_score": 1.0,
+      "e7_rewards": [
+        0.0,
+        0.0
+      ],
+      "e7_dones": [
+        false,
+        true
+      ],
+      "e7_advice_sent": [
+        "advice",
+        "advice"
+      ]
+    }
+  ]
+}

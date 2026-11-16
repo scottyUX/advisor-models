@@ -41,6 +41,8 @@ from minisweagent.agents.default import DefaultAgent, AgentConfig, TerminatingEx
 from minisweagent.models.litellm_model import LitellmModel  # noqa: E402
 from minisweagent.environments.docker import DockerEnvironment  # noqa: E402
 
+from .images import resolve_image_name  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -110,7 +112,7 @@ class AgentSession:
 
             repo_name = self.instance.get("repo", "")
             instance_id = self.instance.get("instance_id", "")
-            image_name = self.instance.get("image_name", "")
+            image_name = resolve_image_name(self.instance)
             problem_statement = self.instance.get("problem_statement", "")
 
             if not image_name:

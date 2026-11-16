@@ -234,6 +234,14 @@ def compute_score_local(patch: str, instance: dict) -> Tuple[float, str, str]:
     Ignores EVAL_SERVER_URL. eval_server must call this, not compute_score,
     or it sends the request back to itself when EVAL_SERVER_URL is set.
     """
+    # E10 on the Spark: grade in the ARM image (no-op unless
+    # SWESMITH_IMAGE_OVERRIDE is set, so E7's behaviour is unchanged). Outside
+    # the try below on purpose: a misconfigured override must raise, not turn
+    # into a silent reward of 0.
+    from .swesmith_arm import install as install_swesmith_arm
+
+    install_swesmith_arm()
+
     try:
         from swesmith.harness.eval import run_evaluation
         from swebench.harness.constants import (
