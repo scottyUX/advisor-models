@@ -83,13 +83,12 @@ def _get_anyscale_bucket_and_file_key(path):
     return save_bucket, path, cloud
 
 def write_to_s3(obj, path: str):
-    import boto3 
+    import boto3
+    from safetensors.torch import save
 
     save_bucket, path, _ = _get_anyscale_bucket_and_file_key(path)
     s3 = boto3.client("s3")
-    cpu_buffer = io.BytesIO()
-    torch.save(obj, cpu_buffer) # save to cpu
-    cpu_buffer.seek(0)
+    cpu_buffer = io.BytesIO(save(obj))
     s3.upload_fileobj(cpu_buffer, save_bucket, path)
     cpu_buffer.close()
 
