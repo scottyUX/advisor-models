@@ -1,7 +1,18 @@
 """E10 trainer: upstream SkyRL's RayPPOTrainer plus saved trajectories (spec §6).
 
-Training is upstream's, unchanged. Two additions, both bookkeeping:
+Training is upstream's except for the reference model, plus two additions
+for bookkeeping:
 
+  reference model       spec §2: the reference is the policy's base with its
+                        LoRA adapter disabled. Upstream builds a separate
+                        frozen copy instead (about 17.6 GB for Qwen2.5-7B),
+                        and its "offload to CPU" frees nothing on the GB10's
+                        unified memory, so G1 ran out of memory (16 Nov). E10
+                        builds no reference actors; the policy worker computes
+                        the reference log-probs under peft's
+                        ``disable_adapter()``. Same weights, same numbers: at
+                        step 1, before any update, the LoRA output is zero and
+                        the two log-probs must be equal.
   E10RayPPOTrainer      keeps CPU copies of the per-token log-probs, values,
                         advantages and returns right after
                         ``compute_advantages_and_returns``. Upstream later
@@ -23,18 +34,95 @@ Environment variables:
                       step's log line counts them as missing)
 """
 
+import contextlib
 import os
 from pathlib import Path
 
 from loguru import logger
+from skyrl.train import trainer as upstream_trainer
 from skyrl.train.trainer import RayPPOTrainer
 from skyrl.train.utils.callbacks import TrainingCallback
 
 from . import trajectories
 
 
+class _NoReferenceWorker:
+    """Stands in for upstream's RefWorker so build_models creates no reference actors."""
+
+
+@contextlib.contextmanager
+def _without_reference_actors():
+    """While upstream's build_models runs, the reference actor group comes back as None.
+
+    Upstream then treats the run as having no reference model: it initializes
+    and offloads none, and gives the dispatcher none.
+    """
+    group_class = upstream_trainer.PPORayActorGroup
+
+    def make_group(*args, **kwargs):
+        worker = args[3] if len(args) > 3 else kwargs.get("ray_actor_type")
+        return None if worker is _NoReferenceWorker else group_class(*args, **kwargs)
+
+    upstream_trainer.PPORayActorGroup = make_group
+    try:
+        yield
+    finally:
+        upstream_trainer.PPORayActorGroup = group_class
+
+
+def adapter_off_policy_worker():
+    """Upstream's FSDP policy worker, with ``forward(..., reference=True)`` run with the adapter off."""
+    import ray
+    from skyrl.backends.skyrl_train.workers.fsdp.fsdp_worker import FSDPPolicyWorkerBase
+
+    class E10FSDPPolicyWorker(FSDPPolicyWorkerBase):
+        def forward(self, data, loss_fn=None, loss_fn_config=None, return_per_token_outputs=True,
+                    reference=False, **extra):
+            # **extra passes through what Ray adds to actor methods (e.g. _ray_trace_ctx).
+            kwargs = dict(loss_fn=loss_fn, loss_fn_config=loss_fn_config,
+                          return_per_token_outputs=return_per_token_outputs, **extra)
+            if not reference:
+                return super().forward(data, **kwargs)
+            peft_model = self.model.model  # HFModelWrapper -> PeftModel when LoRA is on
+            if not hasattr(peft_model, "disable_adapter"):
+                raise RuntimeError("E10 reference log-probs need a LoRA (peft) policy")
+            with peft_model.disable_adapter():
+                return super().forward(data, **kwargs)
+
+    return ray.remote(num_gpus=1)(E10FSDPPolicyWorker)
+
+
 class E10RayPPOTrainer(RayPPOTrainer):
     e10_snapshot = None
+
+    def build_models(self, PolicyWorker, CriticWorker, RefWorker):
+        algorithm = self.cfg.trainer.algorithm
+        if self.cfg.trainer.strategy != "fsdp" or self.cfg.trainer.policy.model.lora.rank <= 0:
+            raise ValueError("E10's adapter-off reference needs trainer.strategy=fsdp and a LoRA policy")
+        if algorithm.use_kl_in_reward or self.cfg.trainer.update_ref_every_epoch:
+            raise ValueError("E10's adapter-off reference supports the KL loss only, with a fixed reference")
+        with _without_reference_actors():
+            super().build_models(adapter_off_policy_worker(), CriticWorker, _NoReferenceWorker)
+        if self.ref_model is not None:
+            raise RuntimeError("E10: a reference actor group was built; expected none")
+
+    def fwd_logprobs_values_reward(self, training_input):
+        training_input = super().fwd_logprobs_values_reward(training_input)
+        if not self.cfg.trainer.algorithm.use_kl_loss:
+            return training_input
+        # Same inputs as upstream's reference forward: one full-batch forward pass.
+        fwd_keys = ["sequences", "attention_mask"]
+        for key in ("rollout_expert_indices", "router_padding_mask", "pixel_values", "image_grid_thw"):
+            if training_input.get(key) is not None:
+                fwd_keys.append(key)
+        if training_input.get(upstream_trainer.SAMPLE_SUPPORT_FIELD) is not None:
+            fwd_keys.extend([upstream_trainer.SAMPLE_SUPPORT_FIELD, "loss_mask"])
+        data_fwd_pass = training_input.select(keys=fwd_keys, metadata_keys=["response_length"])
+        output = self.dispatch.forward("policy", data_fwd_pass, reference=True)
+        base_log_probs = upstream_trainer.loss_fn_outputs_to_tensor(output.loss_fn_outputs, key="logprobs")
+        training_input["base_action_log_probs"] = base_log_probs[: len(training_input["sequences"])]
+        self.dispatch.empty_cache()
+        return training_input
 
     def compute_advantages_and_returns(self, data):
         data = super().compute_advantages_and_returns(data)

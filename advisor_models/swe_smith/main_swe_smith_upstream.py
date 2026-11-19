@@ -66,6 +66,13 @@ def skyrl_entrypoint(cfg: SkyRLTrainConfig):
         entry_point="advisor_models.swe_smith.env:SWESmithEnv",
     )
 
+    # The Spark's GPU and CPU share one memory pool: moving models between them
+    # only duplicates them (spark_resident.py). Applied here, in the process
+    # that builds the trainer and the inference client.
+    from .spark_resident import keep_models_resident
+
+    keep_models_resident()
+
     # Make sure the training loop is not run on the head node.
     exp = E10SWESmithExp(cfg)
     exp.run()
