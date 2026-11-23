@@ -76,6 +76,17 @@ def adapter_off_policy_worker():
     from skyrl.backends.skyrl_train.workers.fsdp.fsdp_worker import FSDPPolicyWorkerBase
 
     class E10FSDPPolicyWorker(FSDPPolicyWorkerBase):
+        def init_model(self, *args, **kwargs):
+            # The policy model lives in this worker process, so the lean forward
+            # (no full logits, no padding; spark_oom.py) is installed here.
+            from .spark_oom import install_lean_forward
+
+            if install_lean_forward():
+                from loguru import logger as worker_logger
+
+                worker_logger.info("E10 Spark: lean policy forward (chunked LM head, unpadded rows)")
+            return super().init_model(*args, **kwargs)
+
         def forward(self, data, loss_fn=None, loss_fn_config=None, return_per_token_outputs=True,
                     reference=False, **extra):
             # **extra passes through what Ray adds to actor methods (e.g. _ray_trace_ctx).
